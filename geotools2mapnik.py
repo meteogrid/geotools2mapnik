@@ -128,7 +128,10 @@ def stroke_to_mapnik(stroke):
         elif css.get('name') == 'stroke-opacity':
             m_stroke.opacity = float(css.text)
         elif css.get('name') == 'stroke-dasharray':
-            m_stroke.add_dash(*map(float,css.text.strip().split(' ')))
+            dashes = map(float, css.text.strip().split(' '))
+            assert len(dashes)%2==0, dashes
+            for i in xrange(0, len(dashes), 2):
+                m_stroke.add_dash(dashes[i], dashes[i+1])
         elif css.get('name') == 'stroke-linecap':
             m_stroke.line_cap = get_cap(css.text)
         elif css.get('name') == 'stroke-join':
