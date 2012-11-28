@@ -72,24 +72,47 @@ def get_join(join):
     else:
         return mapnik.line_join.MITER_JOIN
 
+def _ogc_filter_to_expression(prop):
+    if 'And' in prop.tag:
+        return ' and '.join(map(_ogc_filter_to_expression,
+                                prop.iterchildren()))
+    elif 'Or' in prop.tag:
+        return ' or '.join(map(_ogc_filter_to_expression,
+                                prop.iterchildren()))
+    elif 'PropertyIsGreaterThan' in prop.tag:
+        return _compile_bin_op('>', prop.iterchildren())
+    elif 'PropertyIsLessThan' in prop.tag:
+        return _compile_bin_op('<', prop.iterchildren())
+    elif 'PropertyIsEqualTo' in prop.tag:
+        return _compile_bin_op('=', prop.iterchildren())
+    elif 'PropertyIsNotEqualTo' in prop.tag:
+        return _compile_bin_op('!=', prop.iterchildren())
+    elif 'PropertyIsBetween' in prop.tag:
+        name = prop.PropertyName
+        cql_lo = _compile_bin_op('>', [name, prop.LowerBoundary.Literal])
+        cql_hi = _compile_bin_op('<', [name, prop.UpperBoundary.Literal])
+        return cql_lo + 'and ' + cql_hi
+        
+    raise AssertionError(etree.tounicode(prop, pretty_print=True))
+
+def _compile_bin_op(operator, arg_nodes):
+    ops = map(_translate_literal_or_property_name, arg_nodes)
+    assert len(ops)==2
+    return "%s %s %s" % (ops[0], operator, ops[1])
+
+
+def _translate_literal_or_property_name(e):
+    if 'Literal' in e.tag:
+        if is_number(e.text):
+            return "%s"%e.text
+        else:
+            return "'%s'"%e.text
+    elif 'PropertyName' in e.tag:
+        return "[%s]" % e.text
+    raise AssertionError
+
 def ogc_filter_to_mapnik(ogc_filter):
-    if hasattr(ogc_filter,'PropertyIsGreaterThan'):
-        prop = ogc_filter.PropertyIsGreaterThan
-        operator = '>'
-        #cql = "[%s] > %s" % (prop.PropertyName,prop.Literal)
-    elif hasattr(ogc_filter,'PropertyIsLessThan'):
-        prop = ogc_filter.PropertyIsLessThan
-        operator = '<'
-    elif hasattr(ogc_filter,'PropertyIsEqualTo'):
-        prop = ogc_filter.PropertyIsEqualTo
-        operator = '='
-    elif hasattr(ogc_filter,'PropertyIsNotEqualTo'):
-        prop = ogc_filter.PropertyIsNotEqualTo
-        operator = '!='
-    if is_number(prop.Literal.text):
-        cql = "[%s] %s %s" % (prop.PropertyName,operator,prop.Literal)
-    else:
-        cql = "[%s] %s '%s'" % (prop.PropertyName,operator,prop.Literal.text)
+    cql = _ogc_filter_to_expression(ogc_filter.getchildren()[0])
     if mapnik.mapnik_version() >= 800:
         return mapnik.Expression(str(cql))
     else:
